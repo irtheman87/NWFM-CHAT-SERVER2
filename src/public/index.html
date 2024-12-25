@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chatroom</title>
+  <style>
+    #messages {
+      border: 1px solid #ccc;
+      padding: 10px;
+      height: 300px;
+      overflow-y: auto;
+    }
+    .message {
+      padding: 5px;
+      margin-bottom: 5px;
+      border-radius: 5px;
+    }
+    .own-message {
+      background-color: lightgreen;
+      text-align: right;
+    }
+    .other-message {
+      background-color: lightblue;
+      text-align: left;
+    }
+    .file-link {
+      display: block;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Join a Chat Room</h1>
+  <input id="name" placeholder="Enter your name" />
+  <select id="role">
+    <option value="user">User</option>
+    <option value="consultant">Consultant</option>
+    <option value="admin">Admin</option>
+  </select>
+  <input id="room" placeholder="Enter room name" />
+  <button id="joinBtn">Join</button>
+
+  <h2>Room: <span id="roomName"></span></h2>
+  <h3>Time remaining: <span id="timer">00:00</span></h3>
+
+  <div id="chat">
+    <div id="messages"></div>
+    <input id="messageInput" placeholder="Enter message" />
+    <button id="sendBtn">Send</button>
+    <br>
+    <input type="file" id="fileInput" />
+    <button id="sendFileBtn">Send File</button>
+  </div>
+
+  <button data-minutes="5">Add 5 mins</button>
+  <button data-minutes="10">Add 10 mins</button>
+  <button data-minutes="20">Add 20 mins</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="chat.js"></script>
+</body>
+</html>
