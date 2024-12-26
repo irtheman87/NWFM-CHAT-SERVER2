@@ -100,7 +100,7 @@ io.on('connection', (socket) => {
   
     try {
       // Send the message to the save endpoint
-      const response = await axios.post('https://nwfm-api.onrender.com/api/chat/save', messageData);
+      const response = await axios.post('https://nwfm-api-2.onrender.com/api/chat/save', messageData);
       console.log('Message saved to API:', response.data);
     } catch (error) {
       console.error('Error saving message to API:', error);
@@ -139,7 +139,7 @@ io.on('connection', (socket) => {
       formData.append('room', room);
   
       // Send the file to the upload API
-      const response = await axios.post('https://nwfm-api.onrender.com/api/chat/upload', formData, {
+      const response = await axios.post('https://nwfm-api-2.onrender.com/api/chat/upload', formData, {
         headers: {
           ...formData.getHeaders(),
         },
@@ -208,7 +208,7 @@ io.on('connection', (socket) => {
 
     try {
       // Make a request to check the transaction status by reference
-      const response = await axios.get(`https://nwfm-api.onrender.com/api/users/gettranstat/${reference}`);
+      const response = await axios.get(`https://nwfm-api-2.onrender.com/api/users/gettranstat/${reference}`);
       
       // Verify if the status is 'completed'
       if (response.data.status === 'completed') {
