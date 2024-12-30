@@ -88,15 +88,18 @@ io.on('connection', (socket) => {
   
     // Prepare data to send to the API
     const messageData = {
+      mid: sender.mid,
       uid: sender.userid,
       role: sender.role,
       name: sender.name,
       type: sender.type,
       room,
       message,
+      ...(sender.replyto && { replyto: sender.replyto }), // Include if replyto exists
+      ...(sender.replyId && { replytoId: sender.replyId }), // Include if replyId exists
     };
   
-    console.log("Attempting to save message:", messageData);  // Logging for debugging
+    console.log("Attempting to save message:", messageData); // Logging for debugging
   
     try {
       // Send the message to the save endpoint
@@ -106,6 +109,7 @@ io.on('connection', (socket) => {
       console.error('Error saving message to API:', error);
     }
   });
+  
   
 
 
@@ -132,11 +136,16 @@ io.on('connection', (socket) => {
         filename: fileName || 'uploadedFile', // Default filename if fileName is missing
         contentType: 'application/octet-stream', // Specify content type
       });
+      formData.append('mid', sender.mid);
       formData.append('uid', sender.userid);
       formData.append('role', sender.role);
       formData.append('name', sender.name);
       formData.append('type', sender.type);
       formData.append('room', room);
+  
+      // Include `replyto` and `replytoId` if they exist in sender
+      if (sender.replyto) formData.append('replyto', sender.replyto);
+      if (sender.replytoId) formData.append('replytoId', sender.replytoId);
   
       // Send the file to the upload API
       const response = await axios.post('https://nwfm-api-2.onrender.com/api/chat/upload', formData, {
@@ -150,6 +159,8 @@ io.on('connection', (socket) => {
         sender,
         fileName,
         fileUrl: response.data.file.path, // Get the file URL from the response
+        replyto: sender.replyto || null, // Include replyto in emitted message if exists
+        replytoId: sender.replytoId || null, // Include replytoId in emitted message if exists
         timestamp: response.data.file.timestamp,
       });
     } catch (error) {
@@ -157,6 +168,7 @@ io.on('connection', (socket) => {
       io.to(room).emit('error', { message: 'Failed to upload file' });
     }
   });
+  
 
    socket.on('triggerRefresh', async ({ room }) => {
         if (rooms[room]) {
