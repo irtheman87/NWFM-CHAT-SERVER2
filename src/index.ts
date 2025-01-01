@@ -96,7 +96,7 @@ io.on('connection', (socket) => {
       room,
       message,
       ...(sender.replyto && { replyto: sender.replyto }), // Include if replyto exists
-      ...(sender.replyId && { replytoId: sender.replyId }), // Include if replyId exists
+      ...(sender.replytoId && { replytoId: sender.replytoId }), // Include if replyId exists
     };
   
     console.log("Attempting to save message:", messageData); // Logging for debugging
