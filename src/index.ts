@@ -97,6 +97,7 @@ io.on('connection', (socket) => {
       message,
       ...(sender.replyto && { replyto: sender.replyto }), // Include if replyto exists
       ...(sender.replytoId && { replytoId: sender.replytoId }), // Include if replyId exists
+      ...(sender.replytousertype && { replytousertype: sender.replytousertype }), // Include if replytousertype exists
     };
   
     console.log("Attempting to save message:", messageData); // Logging for debugging
@@ -146,6 +147,7 @@ io.on('connection', (socket) => {
       // Include `replyto` and `replytoId` if they exist in sender
       if (sender.replyto) formData.append('replyto', sender.replyto);
       if (sender.replytoId) formData.append('replytoId', sender.replytoId);
+      if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
   
       // Send the file to the upload API
       const response = await axios.post('https://nwfm-api-2.onrender.com/api/chat/upload', formData, {
@@ -161,6 +163,7 @@ io.on('connection', (socket) => {
         fileUrl: response.data.file.path, // Get the file URL from the response
         replyto: sender.replyto || null, // Include replyto in emitted message if exists
         replytoId: sender.replytoId || null, // Include replytoId in emitted message if exists
+        replytousertype: sender.replytousertype || null,
         timestamp: response.data.file.timestamp,
       });
     } catch (error) {
