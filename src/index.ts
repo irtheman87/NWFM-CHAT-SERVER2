@@ -98,18 +98,20 @@ io.on('connection', (socket) => {
       ...(sender.replyto && { replyto: sender.replyto }), // Include if replyto exists
       ...(sender.replytoId && { replytoId: sender.replytoId }), // Include if replyId exists
       ...(sender.replytousertype && { replytousertype: sender.replytousertype }), // Include if replytousertype exists
+      ...(sender.recommendations && { recommendations: sender.recommendations }), // Include if replytousertype exists
     };
   
     console.log("Attempting to save message:", messageData); // Logging for debugging
   
     try {
       // Send the message to the save endpoint
-      const response = await axios.post('https://nwfm-api-2.onrender.com/api/chat/save', messageData);
+      const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/save', messageData);
       console.log('Message saved to API:', response.data);
     } catch (error) {
       console.error('Error saving message to API:', error);
     }
   });
+  
   
   
 
@@ -150,7 +152,7 @@ io.on('connection', (socket) => {
       if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
   
       // Send the file to the upload API
-      const response = await axios.post('https://nwfm-api-2.onrender.com/api/chat/upload', formData, {
+      const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
         headers: {
           ...formData.getHeaders(),
         },
@@ -223,7 +225,7 @@ io.on('connection', (socket) => {
 
     try {
       // Make a request to check the transaction status by reference
-      const response = await axios.get(`https://nwfm-api-2.onrender.com/api/users/gettranstat/${reference}`);
+      const response = await axios.get(`https://api.nollywoodfilmmaker.com/api/users/gettranstat/${reference}`);
       
       // Verify if the status is 'completed'
       if (response.data.status === 'completed') {
