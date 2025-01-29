@@ -34,7 +34,6 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e8, // Increase Socket.IO message size limit to 100MB
 });
 
-
 interface User {
   userid: string;
   name: string;
@@ -125,12 +124,12 @@ io.on('connection', (socket) => {
 
 
   // Handle file sharing
-  socket.on('sendFile', async ({ room, fileName, fileData, sender }) => {
+  socket.on('sendFile', async ({ room, fileName, fileData, sender }) => { 
     try {
       // Convert `fileData` from Base64 to Buffer if it’s a string
       if (typeof fileData === 'string') {
         // Remove any prefix from `fileData` if it is a DataURL (e.g., "data:image/png;base64,")
-        const base64Data = fileData.split(',')[1];
+        const base64Data = fileData.split(',')[1]; 
         fileData = Buffer.from(base64Data, 'base64');
       }
   
@@ -159,28 +158,10 @@ io.on('connection', (socket) => {
       if (sender.replytoId) formData.append('replytoId', sender.replytoId);
       if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
   
-      // Send the file to the upload API with progress tracking
+      // Send the file to the upload API
       const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
         headers: {
           ...formData.getHeaders(),
-        },
-        onUploadProgress: (progressEvent) => {
-          // Safely calculate the upload progress percentage
-          if (progressEvent.total !== undefined) {
-            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            console.log(`Upload progress for ${fileName}: ${progress}%`);
-
-
-            // Emit the progress to the client
-            io.to(room).emit('uploadProgress', {
-              sender,
-              fileName,
-              progress, // Progress percentage (0-100)
-            });
-          } else {
-            // Handle the case where `total` is undefined
-            console.warn('Upload progress total is undefined. Progress cannot be calculated.');
-          }
         },
       });
   
