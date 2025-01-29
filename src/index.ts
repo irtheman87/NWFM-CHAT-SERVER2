@@ -48,7 +48,7 @@ io.on('connection', (socket) => {
       rooms[room] = { users: [], timer: 600 }; // Default 10 min timer (600 seconds)
     }
 
-    if (rooms[room].users.length < 2) {
+    if (rooms[room].users.length < 4) {
       const user: User = { userid, name, role };
       rooms[room].users.push(user);
       socket.join(room);
@@ -117,60 +117,70 @@ io.on('connection', (socket) => {
 
 
   // Handle file sharing
-  socket.on('sendFile', async ({ room, fileName, fileData, sender }) => { 
+  socket.on("sendFile", async ({ room, fileName, fileData, sender }) => {
     try {
-      // Convert `fileData` from Base64 to Buffer if it’s a string
-      if (typeof fileData === 'string') {
-        // Remove any prefix from `fileData` if it is a DataURL (e.g., "data:image/png;base64,")
-        const base64Data = fileData.split(',')[1]; 
-        fileData = Buffer.from(base64Data, 'base64');
+      // Convert Base64 string to Buffer if necessary
+      if (typeof fileData === "string") {
+        const base64Data = fileData.split(",")[1]; // Extract Base64 part
+        fileData = Buffer.from(base64Data, "base64");
       }
   
-      // Check if `fileData` is now a Buffer
+      // Ensure fileData is a Buffer
       if (!(fileData instanceof Buffer)) {
-        console.error('fileData must be a Buffer');
-        io.to(room).emit('error', { message: 'File data format is incorrect' });
+        console.error("fileData must be a Buffer");
+        io.to(room).emit("error", { message: "File data format is incorrect" });
         return;
       }
   
-      // Prepare the form data for the upload request
+      // Prepare FormData for upload
       const formData = new FormData();
-      formData.append('file', fileData, {
-        filename: fileName || 'uploadedFile', // Default filename if fileName is missing
-        contentType: 'application/octet-stream', // Specify content type
+      formData.append("file", fileData, {
+        filename: fileName || "uploadedFile",
+        contentType: "application/octet-stream",
       });
-      formData.append('mid', sender.mid);
-      formData.append('uid', sender.userid);
-      formData.append('role', sender.role);
-      formData.append('name', sender.name);
-      formData.append('type', sender.type);
-      formData.append('room', room);
+      formData.append("mid", sender.mid);
+      formData.append("uid", sender.userid);
+      formData.append("role", sender.role);
+      formData.append("name", sender.name);
+      formData.append("type", sender.type);
+      formData.append("room", room);
   
-      // Include `replyto` and `replytoId` if they exist in sender
-      if (sender.replyto) formData.append('replyto', sender.replyto);
-      if (sender.replytoId) formData.append('replytoId', sender.replytoId);
-      if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
+      // Optional fields
+      if (sender.replyto) formData.append("replyto", sender.replyto);
+      if (sender.replytoId) formData.append("replytoId", sender.replytoId);
+      if (sender.replytousertype) formData.append("replytousertype", sender.replytousertype);
   
-      // Send the file to the upload API
-      const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
+      // Emit progress updates
+      const response = await axios.post("https://api.nollywoodfilmmaker.com/api/chat/upload", formData, {
         headers: {
           ...formData.getHeaders(),
         },
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
+          console.log(`Upload progress: ${percentCompleted}%`);
+          
+          // Emit progress event to client
+          io.to(room).emit("uploadProgress", {
+            sender,
+            fileName,
+            progress: percentCompleted,
+          });
+        },
       });
   
-      // Emit the file message to the room once the file is saved successfully
-      io.to(room).emit('fileMessage', {
+      // Emit the final success message when upload completes
+      io.to(room).emit("fileMessage", {
         sender,
         fileName,
-        fileUrl: response.data.file.path, // Get the file URL from the response
-        replyto: sender.replyto || null, // Include replyto in emitted message if exists
-        replytoId: sender.replytoId || null, // Include replytoId in emitted message if exists
+        fileUrl: response.data.file.path,
+        replyto: sender.replyto || null,
+        replytoId: sender.replytoId || null,
         replytousertype: sender.replytousertype || null,
         timestamp: response.data.file.timestamp,
       });
     } catch (error) {
-      console.error('Error uploading file:', error);
-      io.to(room).emit('error', { message: 'Failed to upload file' });
+      console.error("Error uploading file:", error);
+      io.to(room).emit("error", { message: "Failed to upload file" });
     }
   });
   
