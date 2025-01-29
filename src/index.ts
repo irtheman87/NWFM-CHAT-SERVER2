@@ -9,15 +9,10 @@ const { Buffer } = require('buffer'); // Ensure `Buffer` is available
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: '*', // Allow all origins; replace '*' with specific origin(s) for security
-    methods: ['GET', 'POST'], // Allowed HTTP methods
-    allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
-    credentials: true, // Include credentials if needed
-  },
-  connectionStateRecovery:{ maxDisconnectionDuration : 60 * 60, skipMiddlewares: true}
-});
+
+// Increase the payload size limit for Express
+app.use(express.json({ limit: '50mb' })); // Increase JSON payload limit
+app.use(express.urlencoded({ limit: '50mb', extended: true })); // Increase URL-encoded payload limit
 
 // Enable CORS for Express routes
 app.use(cors({
@@ -26,6 +21,19 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'], // Specify allowed headers
   credentials: true, // Allow cookies if required
 }));
+
+// Configure Socket.IO with a larger message size limit
+const io = new Server(server, {
+  cors: {
+    origin: '*', // Allow all origins; replace '*' with specific origin(s) for security
+    methods: ['GET', 'POST'], // Allowed HTTP methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
+    credentials: true, // Include credentials if needed
+  },
+  connectionStateRecovery: { maxDisconnectionDuration: 60 * 60, skipMiddlewares: true },
+  maxHttpBufferSize: 1e8, // Increase Socket.IO message size limit to 100MB
+});
+
 
 interface User {
   userid: string;
@@ -117,12 +125,12 @@ io.on('connection', (socket) => {
 
 
   // Handle file sharing
-  socket.on('sendFile', async ({ room, fileName, fileData, sender }) => { 
+  socket.on('sendFile', async ({ room, fileName, fileData, sender }) => {
     try {
       // Convert `fileData` from Base64 to Buffer if it’s a string
       if (typeof fileData === 'string') {
         // Remove any prefix from `fileData` if it is a DataURL (e.g., "data:image/png;base64,")
-        const base64Data = fileData.split(',')[1]; 
+        const base64Data = fileData.split(',')[1];
         fileData = Buffer.from(base64Data, 'base64');
       }
   
@@ -151,10 +159,28 @@ io.on('connection', (socket) => {
       if (sender.replytoId) formData.append('replytoId', sender.replytoId);
       if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
   
-      // Send the file to the upload API
+      // Send the file to the upload API with progress tracking
       const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
         headers: {
           ...formData.getHeaders(),
+        },
+        onUploadProgress: (progressEvent) => {
+          // Safely calculate the upload progress percentage
+          if (progressEvent.total !== undefined) {
+            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            console.log(`Upload progress for ${fileName}: ${progress}%`);
+
+
+            // Emit the progress to the client
+            io.to(room).emit('uploadProgress', {
+              sender,
+              fileName,
+              progress, // Progress percentage (0-100)
+            });
+          } else {
+            // Handle the case where `total` is undefined
+            console.warn('Upload progress total is undefined. Progress cannot be calculated.');
+          }
         },
       });
   
