@@ -11,8 +11,8 @@ const app = express();
 const server = http.createServer(app);
 
 // Increase the payload size limit for Express
-app.use(express.json({ limit: '50mb' })); // Increase JSON payload limit
-app.use(express.urlencoded({ limit: '50mb', extended: true })); // Increase URL-encoded payload limit
+app.use(express.json({ limit: '500mb' })); // Increase JSON payload limit
+app.use(express.urlencoded({ limit: '500mb', extended: true })); // Increase URL-encoded payload limit
 
 // Enable CORS for Express routes
 app.use(cors({
@@ -52,7 +52,7 @@ io.on('connection', (socket) => {
   // Event to join a room with user details
   socket.on('joinRoom', ({ room, userid, name, role }: { room: string, userid: string, name: string, role: 'user' | 'consultant' | 'admin' }) => {
     if (!rooms[room]) {
-      rooms[room] = { users: [], timer: 600 }; // Default 10 min timer (600 seconds)
+      rooms[room] = { users: [], timer: 12000 }; // Default 10 min timer (600 seconds)
     }
 
     if (rooms[room].users.length < 4) {
@@ -71,7 +71,7 @@ io.on('connection', (socket) => {
 
     socket.on('joinQueueRoom', ({ room, userid, name, role }: { room: string, userid: string, name: string, role: 'user' | 'consultant' | 'admin' }) => {
     if (!rooms[room]) {
-      rooms[room] = { users: [], timer: 600 }; // Default 10 min timer (600 seconds)
+      rooms[room] = { users: [], timer: 12000 }; // Default 10 min timer (600 seconds)
     }
 
     if (rooms[room].users.length < 2) {
@@ -124,62 +124,74 @@ io.on('connection', (socket) => {
 
 
   // Handle file sharing
-  socket.on('sendFile', async ({ room, fileName, fileData, sender }) => { 
+  const path = require('path');
+
+socket.on('sendFile', async ({ room, fileName, fileData, sender }) => { 
     try {
-      // Convert `fileData` from Base64 to Buffer if it’s a string
-      if (typeof fileData === 'string') {
-        // Remove any prefix from `fileData` if it is a DataURL (e.g., "data:image/png;base64,")
-        const base64Data = fileData.split(',')[1]; 
-        fileData = Buffer.from(base64Data, 'base64');
-      }
-  
-      // Check if `fileData` is now a Buffer
-      if (!(fileData instanceof Buffer)) {
-        console.error('fileData must be a Buffer');
-        io.to(room).emit('error', { message: 'File data format is incorrect' });
-        return;
-      }
-  
-      // Prepare the form data for the upload request
-      const formData = new FormData();
-      formData.append('file', fileData, {
-        filename: fileName || 'uploadedFile', // Default filename if fileName is missing
-        contentType: 'application/octet-stream', // Specify content type
-      });
-      formData.append('mid', sender.mid);
-      formData.append('uid', sender.userid);
-      formData.append('role', sender.role);
-      formData.append('name', sender.name);
-      formData.append('type', sender.type);
-      formData.append('room', room);
-  
-      // Include `replyto` and `replytoId` if they exist in sender
-      if (sender.replyto) formData.append('replyto', sender.replyto);
-      if (sender.replytoId) formData.append('replytoId', sender.replytoId);
-      if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
-  
-      // Send the file to the upload API
-      const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
-        headers: {
-          ...formData.getHeaders(),
-        },
-      });
-  
-      // Emit the file message to the room once the file is saved successfully
-      io.to(room).emit('fileMessage', {
-        sender,
-        fileName,
-        fileUrl: response.data.file.path, // Get the file URL from the response
-        replyto: sender.replyto || null, // Include replyto in emitted message if exists
-        replytoId: sender.replytoId || null, // Include replytoId in emitted message if exists
-        replytousertype: sender.replytousertype || null,
-        timestamp: response.data.file.timestamp,
-      });
+        // Extract file extension and reject if it's `.exe`
+        const fileExt = path.extname(fileName || '').toLowerCase();
+        if (fileExt === '.exe') {
+            io.to(room).emit('error', { message: 'Executable files (.exe) are not allowed' });
+            return;
+        }
+
+        // Convert `fileData` from Base64 to Buffer if it’s a string
+        if (typeof fileData === 'string') {
+            const base64Data = fileData.split(',')[1]; // Remove DataURL prefix if present
+            fileData = Buffer.from(base64Data, 'base64');
+        }
+
+        // Ensure `fileData` is a Buffer
+        if (!(fileData instanceof Buffer)) {
+            console.error('fileData must be a Buffer');
+            io.to(room).emit('error', { message: 'File data format is incorrect' });
+            return;
+        }
+
+        // Prepare form data for upload request
+        const formData = new FormData();
+        formData.append('file', fileData, {
+            filename: fileName || 'uploadedFile',
+            contentType: 'application/octet-stream',
+        });
+        formData.append('mid', sender.mid);
+        formData.append('uid', sender.userid);
+        formData.append('role', sender.role);
+        formData.append('name', sender.name);
+        formData.append('type', sender.type);
+        formData.append('room', room);
+
+        // Include optional fields if available
+        if (sender.replyto) formData.append('replyto', sender.replyto);
+        if (sender.replytoId) formData.append('replytoId', sender.replytoId);
+        if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
+
+        // Upload file
+        const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
+            headers: {
+                ...formData.getHeaders(),
+            },
+            maxBodyLength: Infinity,  // Allow large request bodies
+            maxContentLength: Infinity, // Allow large response bodies
+        });
+
+        // Emit the file message to the room after successful upload
+        io.to(room).emit('fileMessage', {
+            sender,
+            fileName,
+            fileUrl: response.data.file.path,
+            replyto: sender.replyto || null,
+            replytoId: sender.replytoId || null,
+            replytousertype: sender.replytousertype || null,
+            timestamp: response.data.file.timestamp,
+        });
+
     } catch (error) {
-      console.error('Error uploading file:', error);
-      io.to(room).emit('error', { message: 'Failed to upload file' });
+        console.error('Error uploading file:', error);
+        io.to(room).emit('error', { message: 'Failed to upload file' });
     }
-  });
+});
+
   
 
    socket.on('triggerRefresh', async ({ room }) => {
