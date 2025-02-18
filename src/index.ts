@@ -5,6 +5,7 @@ import path from 'path';
 import axios from 'axios';
 import FormData from 'form-data';
 import cors from 'cors';
+import { log } from 'console';
 const { Buffer } = require('buffer'); // Ensure `Buffer` is available
 
 const app = express();
@@ -166,6 +167,8 @@ socket.on('sendFile', async ({ room, fileName, fileData, sender }) => {
         if (sender.replytoId) formData.append('replytoId', sender.replytoId);
         if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
 
+        console.log(formData);
+
         // Upload file
         const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
             headers: {
@@ -174,6 +177,8 @@ socket.on('sendFile', async ({ room, fileName, fileData, sender }) => {
             maxBodyLength: Infinity,  // Allow large request bodies
             maxContentLength: Infinity, // Allow large response bodies
         });
+
+        console.log(response);
 
         // Emit the file message to the room after successful upload
         io.to(room).emit('fileMessage', {
@@ -185,6 +190,8 @@ socket.on('sendFile', async ({ room, fileName, fileData, sender }) => {
             replytousertype: sender.replytousertype || null,
             timestamp: response.data.file.timestamp,
         });
+
+        console.log(response.data.file.path);
 
     } catch (error) {
         console.error('Error uploading file:', error);
