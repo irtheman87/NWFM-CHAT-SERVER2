@@ -7,6 +7,7 @@ import FormData from 'form-data';
 import cors from 'cors';
 import { log } from 'console';
 const { Buffer } = require('buffer'); // Ensure `Buffer` is available
+import fs from 'fs';
 
 const app = express();
 const server = http.createServer(app);
@@ -16,12 +17,14 @@ app.use(express.json({ limit: '500mb' })); // Increase JSON payload limit
 app.use(express.urlencoded({ limit: '500mb', extended: true })); // Increase URL-encoded payload limit
 
 // Enable CORS for Express routes
-app.use(cors({
-  origin: '*', // Allow all origins; replace '*' with specific origin(s)
-  methods: ['GET', 'POST'], // Restrict allowed methods
-  allowedHeaders: ['Content-Type', 'Authorization'], // Specify allowed headers
-  credentials: true, // Allow cookies if required
-}));
+app.use(
+  cors({
+    origin: '*', // Allow all origins; replace '*' with specific origin(s)
+    methods: ['GET', 'POST'], // Restrict allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Specify allowed headers
+    credentials: true, // Allow cookies if required
+  })
+);
 
 // Configure Socket.IO with a larger message size limit
 const io = new Server(server, {
@@ -41,9 +44,48 @@ interface User {
   role: 'user' | 'consultant' | 'admin';
 }
 
-const rooms: { [key: string]: { users: User[], timer: number } } = {};
-
+const rooms: { [key: string]: { users: User[]; timer: number } } = {};
 const userSocketMap: { [key: string]: string } = {};
+
+// Ensure uploads directory exists for storing file chunks temporarily
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
+
+// Global object to track ongoing file uploads
+const fileUploads: {
+  [uploadId: string]: {
+    fileName: string;
+    totalChunks: number;
+    receivedChunks: number;
+    sender: any;
+    room: string;
+  };
+} = {};
+
+// Helper function to merge file chunks
+const mergeChunks = async (uploadId: string, totalChunks: number, outputFilePath: string) => {
+  const writeStream = fs.createWriteStream(outputFilePath);
+
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkPath = path.join(uploadsDir, `${uploadId}_chunk_${i}`);
+    if (fs.existsSync(chunkPath)) {
+      const chunkData = fs.readFileSync(chunkPath);
+      writeStream.write(chunkData);
+      fs.unlinkSync(chunkPath); // Delete the chunk after merging
+    } else {
+      throw new Error(`Missing chunk file: ${chunkPath}`);
+    }
+  }
+
+  writeStream.end();
+
+  return new Promise<void>((resolve, reject) => {
+    writeStream.on('finish', resolve);
+    writeStream.on('error', reject);
+  });
+};
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -51,50 +93,52 @@ io.on('connection', (socket) => {
   console.log('New user connected:', socket.id);
 
   // Event to join a room with user details
-  socket.on('joinRoom', ({ room, userid, name, role }: { room: string, userid: string, name: string, role: 'user' | 'consultant' | 'admin' }) => {
-    if (!rooms[room]) {
-      rooms[room] = { users: [], timer: 12000 }; // Default 10 min timer (600 seconds)
+  socket.on(
+    'joinRoom',
+    ({ room, userid, name, role }: { room: string; userid: string; name: string; role: 'user' | 'consultant' | 'admin' }) => {
+      if (!rooms[room]) {
+        rooms[room] = { users: [], timer: 12000 }; // Default 10 min timer (600 seconds)
+      }
+
+      if (rooms[room].users.length < 4) {
+        const user: User = { userid, name, role };
+        rooms[room].users.push(user);
+        socket.join(room);
+        userSocketMap[socket.id] = userid; // Map socket.id to userid
+        // Notify the room about the current users and their roles
+        io.to(room).emit('roomData', rooms[room]);
+        console.log(`${name} joined room ${room} as ${role}`);
+      } else {
+        socket.emit('roomFull');
+      }
     }
+  );
 
-    if (rooms[room].users.length < 4) {
-      const user: User = { userid, name, role };
-      rooms[room].users.push(user);
-      socket.join(room);
-      userSocketMap[socket.id] = userid; // Map socket.id to userid
-      // Notify the room about the current users and their roles
-      io.to(room).emit('roomData', rooms[room]);
-      console.log(`${name} joined room ${room} as ${role}`);
-    } else {
-      socket.emit('roomFull');
+  socket.on(
+    'joinQueueRoom',
+    ({ room, userid, name, role }: { room: string; userid: string; name: string; role: 'user' | 'consultant' | 'admin' }) => {
+      if (!rooms[room]) {
+        rooms[room] = { users: [], timer: 12000 };
+      }
+
+      if (rooms[room].users.length < 2) {
+        const user: User = { userid, name, role };
+        rooms[room].users.push(user);
+        socket.join(room);
+        userSocketMap[socket.id] = userid;
+        io.to(room).emit('roomData', rooms[room]);
+        console.log(`${name} joined room ${room} as ${role}`);
+      } else {
+        socket.emit('roomFull');
+      }
     }
-  });
+  );
 
-
-    socket.on('joinQueueRoom', ({ room, userid, name, role }: { room: string, userid: string, name: string, role: 'user' | 'consultant' | 'admin' }) => {
-    if (!rooms[room]) {
-      rooms[room] = { users: [], timer: 12000 }; // Default 10 min timer (600 seconds)
-    }
-
-    if (rooms[room].users.length < 2) {
-      const user: User = { userid, name, role };
-      rooms[room].users.push(user);
-      socket.join(room);
-      userSocketMap[socket.id] = userid; // Map socket.id to userid
-      // Notify the room about the current users and their roles
-      io.to(room).emit('roomData', rooms[room]);
-      console.log(`${name} joined room ${room} as ${role}`);
-    } else {
-      socket.emit('roomFull');
-    }
-  });
-
-  // Handle chat messages
+  // Handle chat messages (unchanged)
   socket.on('chatMessage', async ({ room, message, sender }) => {
-    console.log("Received 'chatMessage' event with:", { room, message, sender }); // Debug log
-  
+    console.log("Received 'chatMessage' event with:", { room, message, sender });
     io.to(room).emit('message', { sender, message });
-  
-    // Prepare data to send to the API
+
     const messageData = {
       mid: sender.mid,
       uid: sender.userid,
@@ -103,101 +147,194 @@ io.on('connection', (socket) => {
       type: sender.type,
       room,
       message,
-      ...(sender.replyto && { replyto: sender.replyto }), // Include if replyto exists
-      ...(sender.replytoId && { replytoId: sender.replytoId }), // Include if replyId exists
-      ...(sender.replytousertype && { replytousertype: sender.replytousertype }), // Include if replytousertype exists
-      ...(sender.recommendations && { recommendations: sender.recommendations }), // Include if replytousertype exists
+      ...(sender.replyto && { replyto: sender.replyto }),
+      ...(sender.replytoId && { replytoId: sender.replytoId }),
+      ...(sender.replytousertype && { replytousertype: sender.replytousertype }),
+      ...(sender.replytochattype && { replytochattype: sender.replytochattype }),
+      ...(sender.recommendations && { recommendations: sender.recommendations }),
     };
-  
-    console.log("Attempting to save message:", messageData); // Logging for debugging
-  
+
+    console.log('Attempting to save message:', messageData);
+    
     try {
-      // Send the message to the save endpoint
       const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/save', messageData);
       console.log('Message saved to API:', response.data);
     } catch (error) {
       console.error('Error saving message to API:', error);
     }
   });
-  
-  
-  
 
+  socket.on(
+    'sendFileChunk',
+    async (data: {
+      uploadId: string;
+      fileName: string;
+      chunkIndex: number;
+      totalChunks: number;
+      fileData: string | Buffer;
+      sender: any;
+      room: string;
+    }) => {
+      const { uploadId, fileName, chunkIndex, totalChunks, fileData, sender, room } = data;
 
-  // Handle file sharing
-  const path = require('path');
+      // Convert fileData from Base64 to Buffer if needed
+      let chunkBuffer: Buffer;
+      if (typeof fileData === 'string') {
+        const base64Data = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+        chunkBuffer = Buffer.from(base64Data, 'base64');
+      } else {
+        chunkBuffer = fileData;
+      }
 
-socket.on('sendFile', async ({ room, fileName, fileData, sender }) => { 
-    try {
-        // Extract file extension and reject if it's `.exe`
-        const fileExt = path.extname(fileName || '').toLowerCase();
-        if (fileExt === '.exe') {
-            io.to(room).emit('error', { message: 'Executable files (.exe) are not allowed' });
-            return;
-        }
+      // Save the chunk to disk
+      const chunkPath = path.join(uploadsDir, `${uploadId}_chunk_${chunkIndex}`);
+      fs.writeFileSync(chunkPath, chunkBuffer);
+      console.log(`Saved chunk ${chunkIndex} for upload ${uploadId}`);
 
-        // Convert `fileData` from Base64 to Buffer if it’s a string
-        if (typeof fileData === 'string') {
-            const base64Data = fileData.split(',')[1]; // Remove DataURL prefix if present
-            fileData = Buffer.from(base64Data, 'base64');
-        }
+      // Initialize tracking for this upload if not already done
+      if (!fileUploads[uploadId]) {
+        fileUploads[uploadId] = {
+          fileName,
+          totalChunks,
+          receivedChunks: 0,
+          sender,
+          room,
+        };
+      }
+      fileUploads[uploadId].receivedChunks++;
 
-        // Ensure `fileData` is a Buffer
-        if (!(fileData instanceof Buffer)) {
-            console.error('fileData must be a Buffer');
-            io.to(room).emit('error', { message: 'File data format is incorrect' });
-            return;
-        }
+      // If all chunks have been received, merge them and upload
+      if (fileUploads[uploadId].receivedChunks === totalChunks) {
+        const mergedFilePath = path.join(uploadsDir, `${uploadId}_merged_${fileName}`);
+        try {
+          await mergeChunks(uploadId, totalChunks, mergedFilePath);
+          console.log(`Chunks merged for upload ${uploadId}`);
 
-        // Prepare form data for upload request
-        const formData = new FormData();
-        formData.append('file', fileData, {
-            filename: fileName || 'uploadedFile',
+          // Prepare form data for upload
+          const mergedFileBuffer = fs.readFileSync(mergedFilePath);
+          const formData = new FormData();
+          formData.append('file', mergedFileBuffer, {
+            filename: fileName,
             contentType: 'application/octet-stream',
-        });
-        formData.append('mid', sender.mid);
-        formData.append('uid', sender.userid);
-        formData.append('role', sender.role);
-        formData.append('name', sender.name);
-        formData.append('type', sender.type);
-        formData.append('room', room);
+          });
+          formData.append('mid', sender.mid);
+          formData.append('uid', sender.userid);
+          formData.append('role', sender.role);
+          formData.append('name', sender.name);
+          formData.append('type', sender.type);
+          formData.append('room', room);
 
-        // Include optional fields if available
-        if (sender.replyto) formData.append('replyto', sender.replyto);
-        if (sender.replytoId) formData.append('replytoId', sender.replytoId);
-        if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
+          // Append optional fields if provided
+          if (sender.replyto) formData.append('replyto', sender.replyto);
+          if (sender.replytoId) formData.append('replytoId', sender.replytoId);
+          if (sender.replytochattype) formData.append('replytochattype', sender.replytochattype);
+          if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
 
-        console.log(formData);
-
-        // Upload file
-        const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
+          // Upload merged file
+          const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
             headers: {
-                ...formData.getHeaders(),
+              ...formData.getHeaders(),
             },
-            maxBodyLength: Infinity,  // Allow large request bodies
-            maxContentLength: Infinity, // Allow large response bodies
-        });
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+          });
 
-        console.log(response);
+          console.log('Merged file uploaded:', response.data);
 
-        // Emit the file message to the room after successful upload
-        io.to(room).emit('fileMessage', {
+          // Emit the file message to the room
+          io.to(room).emit('fileMessage', {
             sender,
             fileName,
             fileUrl: response.data.file.path,
             replyto: sender.replyto || null,
             replytoId: sender.replytoId || null,
             replytousertype: sender.replytousertype || null,
+            replytochattype: sender.replytochattype || null,
             timestamp: response.data.file.timestamp,
-        });
+          });
 
-        console.log(response.data.file.path);
-
-    } catch (error) {
-        console.error('Error uploading file:', error);
-        io.to(room).emit('error', { message: 'Failed to upload file' });
+          // Clean up the merged file and the tracking object
+          fs.unlinkSync(mergedFilePath);
+          delete fileUploads[uploadId];
+        } catch (error) {
+          console.error(`Error merging/uploading file for upload ${uploadId}:`, error);
+          io.to(room).emit('error', { message: 'Failed to merge and upload file chunks' });
+        }
+      }
     }
-});
+  );
+
+  // Existing file sharing event (if needed)
+  socket.on('sendFile', async ({ room, fileName, fileData, sender }) => {
+    try {
+      // Reject executable files
+      const fileExt = path.extname(fileName || '').toLowerCase();
+      if (fileExt === '.exe') {
+        io.to(room).emit('error', { message: 'Executable files (.exe) are not allowed' });
+        return;
+      }
+
+      // Convert fileData from Base64 to Buffer if needed
+      if (typeof fileData === 'string') {
+        const base64Data = fileData.split(',')[1]; // Remove DataURL prefix if present
+        fileData = Buffer.from(base64Data, 'base64');
+      }
+
+      if (!(fileData instanceof Buffer)) {
+        console.error('fileData must be a Buffer');
+        io.to(room).emit('error', { message: 'File data format is incorrect' });
+        return;
+      }
+
+      // Prepare form data for upload
+      const formData = new FormData();
+      formData.append('file', fileData, {
+        filename: fileName || 'uploadedFile',
+        contentType: 'application/octet-stream',
+      });
+      formData.append('mid', sender.mid);
+      formData.append('uid', sender.userid);
+      formData.append('role', sender.role);
+      formData.append('name', sender.name);
+      formData.append('type', sender.type);
+      formData.append('room', room);
+
+      if (sender.replyto) formData.append('replyto', sender.replyto);
+      if (sender.replytoId) formData.append('replytoId', sender.replytoId);
+      if (sender.replytochattype) formData.append('replytochattype', sender.replytochattype);
+      if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
+
+      console.log(formData);
+
+      // Upload file
+      const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
+        headers: {
+          ...formData.getHeaders(),
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+
+      console.log(response);
+
+      // Emit file message after successful upload
+      io.to(room).emit('fileMessage', {
+        sender,
+        fileName,
+        fileUrl: response.data.file.path,
+        replyto: sender.replyto || null,
+        replytoId: sender.replytoId || null,
+        replytousertype: sender.replytousertype || null,
+        replytochattype: sender.replytochattype || null,
+        timestamp: response.data.file.timestamp,
+      });
+
+      console.log(response.data.file.path);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      io.to(room).emit('error', { message: 'Failed to upload file' });
+    }
+  });
 
   
 
