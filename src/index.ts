@@ -87,6 +87,8 @@ const mergeChunks = async (uploadId: string, totalChunks: number, outputFilePath
   });
 };
 
+const API_URL = "https://api.nollywoodfilmmaker.com/api/chat/attendance";
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 io.on('connection', (socket) => {
@@ -105,6 +107,15 @@ io.on('connection', (socket) => {
         rooms[room].users.push(user);
         socket.join(room);
         userSocketMap[socket.id] = userid; // Map socket.id to userid
+        if(user.role === 'user') {
+                  markUserAttendance(room, userid)
+                    .then((data) => console.log("User checked in:", data))
+                    .catch((err) => console.error("Error:", err));
+        }else if(user.role === 'consultant') {
+                  markConsultantAttendance(room, userid)
+                    .then((data) => console.log("Consultant checked in:", data))
+                    .catch((err) => console.error("Error:", err));
+        }      
         // Notify the room about the current users and their roles
         io.to(room).emit('roomData', rooms[room]);
         console.log(`${name} joined room ${room} as ${role}`);
@@ -421,6 +432,30 @@ io.on('connection', (socket) => {
     }
   });
 });
+
+export const markConsultantAttendance = async (roomId: string, cid: string) => {
+  try {
+    const response = await axios.post(API_URL, { roomId, cid });
+    console.log("Consultant attendance response:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error marking consultant attendance:", error || error);
+    throw error;
+  }
+};
+
+export const markUserAttendance = async (roomId: string, uid: string) => {
+  try {
+    const response = await axios.post(API_URL, { roomId, uid });
+    console.log("User attendance response:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error marking user attendance:", error || error);
+    throw error;
+  }
+};
+
+
 
 // Timer that decreases every second
 setInterval(() => {
