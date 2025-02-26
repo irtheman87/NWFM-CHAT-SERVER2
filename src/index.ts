@@ -107,11 +107,11 @@ io.on('connection', (socket) => {
         rooms[room].users.push(user);
         socket.join(room);
         userSocketMap[socket.id] = userid; // Map socket.id to userid
-        if(user.role === 'user') {
+        if(role === 'user') {
                   markUserAttendance(room, userid)
                     .then((data) => console.log("User checked in:", data))
                     .catch((err) => console.error("Error:", err));
-        }else if(user.role === 'consultant') {
+        }else if(role === 'consultant') {
                   markConsultantAttendance(room, userid)
                     .then((data) => console.log("Consultant checked in:", data))
                     .catch((err) => console.error("Error:", err));
