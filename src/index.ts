@@ -180,48 +180,52 @@ io.on('connection', (socket) => {
     async (data: {
       uploadId: string;
       fileName: string;
-      chunkIndex: number;
       totalChunks: number;
-      fileData: string | Buffer;
+      chunks: { chunkIndex: number; fileData: string | Buffer }[];
       sender: any;
       room: string;
     }) => {
-      const { uploadId, fileName, chunkIndex, totalChunks, fileData, sender, room } = data;
-
-      // Convert fileData from Base64 to Buffer if needed
-      let chunkBuffer: Buffer;
-      if (typeof fileData === 'string') {
-        const base64Data = fileData.includes(',') ? fileData.split(',')[1] : fileData;
-        chunkBuffer = Buffer.from(base64Data, 'base64');
-      } else {
-        chunkBuffer = fileData;
-      }
-
-      // Save the chunk to disk
-      const chunkPath = path.join(uploadsDir, `${uploadId}_chunk_${chunkIndex}`);
-      fs.writeFileSync(chunkPath, chunkBuffer);
-      console.log(`Saved chunk ${chunkIndex} for upload ${uploadId}`);
-
-      // Initialize tracking for this upload if not already done
+      const { uploadId, fileName, totalChunks, chunks, sender, room } = data;
+  
+      // Initialize file upload tracking if it doesn't exist
       if (!fileUploads[uploadId]) {
         fileUploads[uploadId] = {
           fileName,
           totalChunks,
-          receivedChunks: 0,
+          receivedChunks: 0, // ✅ Ensure it's a number, not a Set
           sender,
           room,
         };
       }
-      fileUploads[uploadId].receivedChunks++;
-
-      // If all chunks have been received, merge them and upload
+  
+      // Process and save each chunk
+      chunks.forEach(({ chunkIndex, fileData }) => {
+        // Convert Base64 to Buffer if needed
+        let chunkBuffer: Buffer;
+        if (typeof fileData === 'string') {
+          const base64Data = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+          chunkBuffer = Buffer.from(base64Data, 'base64');
+        } else {
+          chunkBuffer = fileData;
+        }
+  
+        // Save chunk to disk
+        const chunkPath = path.join(uploadsDir, `${uploadId}_chunk_${chunkIndex}`);
+        fs.writeFileSync(chunkPath, chunkBuffer);
+        console.log(`Saved chunk ${chunkIndex} for upload ${uploadId}`);
+  
+        // ✅ Correctly track received chunks
+        fileUploads[uploadId].receivedChunks += 1;
+      });
+  
+      // If all chunks are received, merge them
       if (fileUploads[uploadId].receivedChunks === totalChunks) {
         const mergedFilePath = path.join(uploadsDir, `${uploadId}_merged_${fileName}`);
         try {
           await mergeChunks(uploadId, totalChunks, mergedFilePath);
           console.log(`Chunks merged for upload ${uploadId}`);
-
-          // Prepare form data for upload
+  
+          // Upload the merged file (same logic as before)
           const mergedFileBuffer = fs.readFileSync(mergedFilePath);
           const formData = new FormData();
           formData.append('file', mergedFileBuffer, {
@@ -234,25 +238,20 @@ io.on('connection', (socket) => {
           formData.append('name', sender.name);
           formData.append('type', sender.type);
           formData.append('room', room);
-
-          // Append optional fields if provided
+  
           if (sender.replyto) formData.append('replyto', sender.replyto);
           if (sender.replytoId) formData.append('replytoId', sender.replytoId);
           if (sender.replytochattype) formData.append('replytochattype', sender.replytochattype);
           if (sender.replytousertype) formData.append('replytousertype', sender.replytousertype);
-
-          // Upload merged file
-          const response = await axios.post('https://api.nollywoodfilmmaker.com/api/chat/upload', formData, {
-            headers: {
-              ...formData.getHeaders(),
-            },
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-          });
-
+  
+          const response = await axios.post(
+            'https://api.nollywoodfilmmaker.com/api/chat/upload',
+            formData,
+            { headers: { ...formData.getHeaders() }, maxBodyLength: Infinity, maxContentLength: Infinity }
+          );
+  
           console.log('Merged file uploaded:', response.data);
-
-          // Emit the file message to the room
+  
           io.to(room).emit('fileMessage', {
             sender,
             fileName,
@@ -263,8 +262,7 @@ io.on('connection', (socket) => {
             replytochattype: sender.replytochattype || null,
             timestamp: response.data.file.timestamp,
           });
-
-          // Clean up the merged file and the tracking object
+  
           fs.unlinkSync(mergedFilePath);
           delete fileUploads[uploadId];
         } catch (error) {
@@ -274,6 +272,8 @@ io.on('connection', (socket) => {
       }
     }
   );
+  
+  
 
   // Existing file sharing event (if needed)
   socket.on('sendFile', async ({ room, fileName, fileData, sender }) => {
