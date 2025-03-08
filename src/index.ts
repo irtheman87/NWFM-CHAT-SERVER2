@@ -34,8 +34,8 @@ const io = new Server(server, {
     allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
     credentials: true, // Include credentials if needed
   },
-  pingTimeout: 120000, // 60 seconds
-  pingInterval: 15000, // 25 seconds
+  pingTimeout: 600000, // 60 seconds
+  pingInterval: 25000, // 25 seconds
   connectionStateRecovery: { maxDisconnectionDuration: 60 * 60, skipMiddlewares: true },
   maxHttpBufferSize: 1e8, // Increase Socket.IO message size limit to 100MB
 });
