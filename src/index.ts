@@ -203,10 +203,10 @@ io.on('connection', (socket) => {
       const progress = Math.round(((chunkIndex + 1) / totalChunks) * 100);
       console.log(`Saved chunk ${chunkIndex} for upload ${uploadId} (${progress}%)`);
       // console.log(`Saved chunk ${chunkIndex} for upload ${uploadId}`);
-      io.to(room).emit('progress', {
-            sender,
-            progress
-          });
+      // io.to(room).emit('progress', {
+      //       sender,
+      //       progress
+      //   });
 
       // Initialize tracking for this upload if not already done
       if (!fileUploads[uploadId]) {
