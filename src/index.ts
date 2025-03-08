@@ -34,6 +34,8 @@ const io = new Server(server, {
     allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
     credentials: true, // Include credentials if needed
   },
+  pingTimeout: 120000, // 60 seconds
+  pingInterval: 15000, // 25 seconds
   connectionStateRecovery: { maxDisconnectionDuration: 60 * 60, skipMiddlewares: true },
   maxHttpBufferSize: 1e8, // Increase Socket.IO message size limit to 100MB
 });
@@ -203,10 +205,10 @@ io.on('connection', (socket) => {
       const progress = Math.round(((chunkIndex + 1) / totalChunks) * 100);
       console.log(`Saved chunk ${chunkIndex} for upload ${uploadId} (${progress}%)`);
       // console.log(`Saved chunk ${chunkIndex} for upload ${uploadId}`);
-      // io.to(room).emit('progress', {
-      //       sender,
-      //       progress
-      //   });
+      io.to(room).emit('progress', {
+            sender,
+            progress
+        });
 
       // Initialize tracking for this upload if not already done
       if (!fileUploads[uploadId]) {
