@@ -200,15 +200,38 @@ io.on('connection', (socket) => {
       }
 
       // Save the chunk to disk
+      const uploadsProgress: Record<string, { receivedChunks: number; totalChunks: number }> = {};
+
       const chunkPath = path.join(uploadsDir, `${uploadId}_chunk_${chunkIndex}`);
       fs.writeFileSync(chunkPath, chunkBuffer);
-      const progress = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+      
+      // Initialize progress tracking if not already set
+      if (!uploadsProgress[uploadId]) {
+          uploadsProgress[uploadId] = { receivedChunks: 0, totalChunks };
+      }
+      
+      // Update progress tracker
+      uploadsProgress[uploadId].receivedChunks++;
+      const progress = Math.round((uploadsProgress[uploadId].receivedChunks / totalChunks) * 100);
+      
       console.log(`Saved chunk ${chunkIndex} for upload ${uploadId} (${progress}%)`);
-      // console.log(`Saved chunk ${chunkIndex} for upload ${uploadId}`);
+      
+      // Emit progress update
       io.to(room).emit('progress', {
-            sender,
-            progress
-        });
+          sender,
+          progress,
+          uploadId
+      });
+      
+      // Check if upload is complete
+      if (uploadsProgress[uploadId].receivedChunks >= totalChunks) {
+          console.log(`Upload ${uploadId} completed`);
+          io.to(room).emit('uploadComplete', { uploadId, sender, message: 'Upload completed' });
+      
+          // Clean up memory
+          delete uploadsProgress[uploadId];
+      }
+      
 
       // Initialize tracking for this upload if not already done
       if (!fileUploads[uploadId]) {
