@@ -205,32 +205,40 @@ io.on('connection', (socket) => {
       const chunkPath = path.join(uploadsDir, `${uploadId}_chunk_${chunkIndex}`);
       fs.writeFileSync(chunkPath, chunkBuffer);
       
-      // Initialize progress tracking if not already set
+      // Initialize upload tracking if not already set
       if (!uploadsProgress[uploadId]) {
-          uploadsProgress[uploadId] = { receivedChunks: 0, totalChunks };
+          uploadsProgress[uploadId] = { receivedChunks: 0, totalChunks: totalChunks };
       }
       
-      // Update progress tracker
+      // Increase received chunk count
       uploadsProgress[uploadId].receivedChunks++;
-      const progress = Math.round((uploadsProgress[uploadId].receivedChunks / totalChunks) * 100);
       
-      console.log(`Saved chunk ${chunkIndex} for upload ${uploadId} (${progress}%)`);
+      const receivedChunks = uploadsProgress[uploadId].receivedChunks;
+      const total = uploadsProgress[uploadId].totalChunks;
       
-      // Emit progress update
-      io.to(room).emit('progress', {
-          sender,
-          progress,
-          uploadId
-      });
+      // Ensure totalChunks is correctly set
+      if (!total || total <= 0) {
+          console.error(`Error: Invalid totalChunks (${total}) for upload ${uploadId}`);
+      } else {
+          const progress = Math.round((receivedChunks / total) * 100);
+          console.log(`Saved chunk ${chunkIndex} for upload ${uploadId} (${progress}%)`);
       
-      // Check if upload is complete
-      if (uploadsProgress[uploadId].receivedChunks >= totalChunks) {
-          console.log(`Upload ${uploadId} completed`);
-          io.to(room).emit('uploadComplete', { uploadId, sender, message: 'Upload completed' });
+          // Emit progress update
+          io.to(room).emit('progress', {
+              sender,
+              progress,
+              uploadId
+          });
       
-          // Clean up memory
-          delete uploadsProgress[uploadId];
-      }
+          // If all chunks are received, mark upload as complete
+          if (receivedChunks >= total) {
+              console.log(`Upload ${uploadId} completed`);
+              io.to(room).emit('uploadComplete', { uploadId, sender, message: 'Upload completed' });
+      
+              // Cleanup memory after completion
+              delete uploadsProgress[uploadId];
+          }
+      }   
       
 
       // Initialize tracking for this upload if not already done
